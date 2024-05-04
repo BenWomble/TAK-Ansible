@@ -1,0 +1,101 @@
+---
+- name: Execute commands for TAK server configuration
+  hosts: all
+  become: true
+  vars:
+    tak_certs_dir: "/opt/tak/certs"
+    tak_utils_dir: "/opt/tak/utils"
+
+  tasks:
+
+    - name: Alter cert-metadata.sh (Country)
+      lineinfile:
+        path: "{{ tak_certs_dir }}/cert-metadata.sh"
+        regexp: '^COUNTRY='
+        line: 'COUNTRY=US'
+        state: present
+
+    - name: Alter cert-metadata.sh (State)
+      lineinfile:
+        path: "{{ tak_certs_dir }}/cert-metadata.sh"
+        regexp: '^STATE='
+        line: 'STATE=VA'
+        state: present
+
+    - name: Alter cert-metadata.sh (City)
+      lineinfile:
+        path: "{{ tak_certs_dir }}/cert-metadata.sh"
+        regexp: '^CITY='
+        line: 'CITY=XX'
+        state: present
+
+    - name: Alter cert-metadata.sh (Organization)
+      lineinfile:
+        path: "{{ tak_certs_dir }}/cert-metadata.sh"
+        regexp: '^ORGANIZATION='
+        line: 'ORGANIZATION=SLATETAK'
+        state: present
+
+    - name: Alter cert-metadata.sh (Organizational Unit)
+      lineinfile:
+        path: "{{ tak_certs_dir }}/cert-metadata.sh"
+        regexp: '^ORGANIZATIONAL_UNIT='
+        line: 'ORGANIZATIONAL_UNIT=SLATETAKOU'
+        state: present
+
+    - name: Remove old files
+      become: true
+      become_user: root
+      shell: |
+        rm -r -f ca.pem
+        rm -r -f ansible-test*
+        rm -r -f takserver*
+        rm -r -f takuser*
+        rm -r -f webadmin*
+      args:
+        chdir: /opt/tak/certs/files
+
+    - name: Switch user to TAK user and generate certificates (makeRoot)
+      become: true
+      become_user: tak
+      shell: ./makeRootCa.sh --ca-name ansible-test
+      args:
+        chdir: /opt/tak/certs
+
+    - name: Switch user to TAK user and generate certificates (makeCert ca)
+      become: true
+      become_user: tak
+      shell: echo "y" | ./makeCert.sh ca ansible-test-intermediate
+      args:
+        chdir: /opt/tak/certs
+
+    - name: Switch user to TAK user and generate certificates (makeCert server takserver)
+      become: true
+      become_user: tak
+      shell: ./makeCert.sh server takserver
+      args:
+        chdir: /opt/tak/certs
+
+    - name: Switch user to TAK user and generate certificates (makeCert client takuser)
+      become: true
+      become_user: tak
+      shell: ./makeCert.sh client takuser
+      args:
+        chdir: /opt/tak/certs
+
+    - name: Switch user to TAK user and generate certificates (makeCert client webadmin)
+      become: true
+      become_user: tak
+      shell: ./makeCert.sh client webadmin
+      args:
+        chdir: /opt/tak/certs
+
+    - name: Modify user "webadmin" to become admin
+      become: true
+      become_user: root
+      shell: java -jar /opt/tak/utils/UserManager.jar certmod -A /opt/tak/certs/files/webadmin.pem
+
+    - name: Restart takserver service
+      systemd:
+        name: takserver
+        state: restarted

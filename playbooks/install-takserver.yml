@@ -1,0 +1,91 @@
+---
+- name: Install and Configure TAKSERVER 5.1 on CentOS 7
+  hosts: takservers
+  become: true
+
+  tasks:
+    - name: Increase number of TCP connections
+      lineinfile:
+        path: /etc/security/limits.conf
+        line: '* {{ item.type }} nofile 32768'
+        state: present
+      loop:
+        - { type: soft }
+        - { type: hard }
+
+    - name: Install EPEL release
+      yum:
+        name: epel-release
+        state: present
+
+    - name: Install PostgreSQL repository
+      yum:
+        name: https://download.postgresql.org/pub/repos/yum/reporpms/EL-7-x86_64/pgdg-redhat-repo-latest.noarch.rpm
+        state: present
+
+    - name: Install PostGIS and Utilities
+      yum:
+        name:
+          - postgis33_15
+          - postgis33_15-utils
+        state: present
+
+    - name: Install PostgreSQL server and contrib
+      yum:
+        name:
+          - postgresql15-server
+          - postgresql15-contrib
+        state: present
+
+    - name: Install JDK 17
+      shell: |
+        yum remove java-17
+        yum install -y https://download.oracle.com/java/17/latest/jdk-17_linux-x64_bin.rpm
+
+    - name: Update all packages
+      yum:
+        name: '*'
+        state: latest
+
+    - name: Install TAKSERVER RPM
+      shell: yum install /tmp/takserver-5.1-RELEASE11.noarch.rpm --nodeps
+
+    - name: Install TAKSERVER RPM from local file
+      yum:
+        name: '/tmp/takserver-5.1-RELEASE11.noarch.rpm'
+        state: present
+
+    - name: Initialize TAKSERVER Database
+      command: /opt/tak/db-utils/takserver-setup-db.sh
+
+    - name: Reload systemd manager configuration
+      systemd:
+        daemon_reload: yes
+
+    - name: Manage TAKSERVER service
+      systemd:
+        name: takserver
+        state: started
+        enabled: yes
+
+    - name: Open necessary firewall ports
+      firewalld:
+        port: "{{ item.port }}"
+        zone: public
+        permanent: yes
+        state: enabled
+      loop:
+        - { port: 8089/tcp }
+        - { port: 8443/tcp }
+        - { port: 8446/tcp }
+        - { port: 9001/tcp }
+        - { port: 11111/udp }
+
+    - name: Reload firewall
+      firewalld:
+        state: reloaded
+
+    - name: Restart TAKSERVER
+      systemd:
+        name: takserver
+        state: restarted
